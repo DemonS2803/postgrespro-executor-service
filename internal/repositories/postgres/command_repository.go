@@ -24,6 +24,7 @@ func FindCommandById(storage *Storage, id int) (models.Command, error) {
 }
 
 func FindCommandListByLimitAndOffset(storage *Storage, limit int, offset int) ([]models.Command, error) {
+	offset = limit * offset
 	rows, err := storage.Db.Query(`SELECT c.id, c.code, c.description, c.created_at
 				FROM commands c
 				ORDER BY created_at

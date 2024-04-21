@@ -1,6 +1,7 @@
 package command_service
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
 	"os"
@@ -53,16 +54,19 @@ func GetCommandsListByLimitAndOffset(storage *postgres.Storage, redisClient *red
 }
 
 func GetCompletedCommandById(storage *postgres.Storage, redisClient *redis.Redis, completedCommandId int) (models.CompletedCommandRequest, error) {
+
 	command, err := redis.GetCompletedCommand(redisClient, completedCommandId)
 	if err == nil {
 		return command, nil
 	}
-	dbCommand, err := postgres.FindCompletedCommandById(storage, completedCommandId)
+	dbCommand, err := postgres.FindCompletedCommandById(redisClient, storage, completedCommandId)
 	if err != nil {
 		slog.Error("error when get command result:", err)
 		return models.CompletedCommandRequest{}, err
 	}
-	redis.PutCompletedCommand(redisClient, dbCommand)
+	if !redis.IsCommandRunning(redisClient, completedCommandId) {
+		redis.PutCompletedCommand(redisClient, dbCommand)
+	}
 
 	return dbCommand, nil
 }
@@ -87,15 +91,75 @@ func ExecuteCommand(storage *postgres.Storage, redisClient *redis.Redis, command
 	}
 
 	com := exec.Command("/bin/bash", fmt.Sprintf("./resources/scripts/tmp/%s", filename))
-	out, err := com.Output()
+
+	stdout, err := com.StdoutPipe()
 	if err != nil {
-		slog.Error("error during running command", err)
-		postgres.UpdateCompletedCommandById(storage, completedCommandId, err.Error())
-	} else {
-		postgres.UpdateCompletedCommandById(storage, completedCommandId, string(out))
+		fmt.Println(err)
 	}
 
+	err = com.Start()
+	postgres.SetPIDByCompletedCommandId(storage, completedCommandId, com.Process.Pid)
+	fmt.Println("process pid", com.Process.Pid)
+	if err != nil {
+		slog.Error("stopping process error", err)
+	}
+	scanner := bufio.NewScanner(stdout)
+	counter := 1
+	for scanner.Scan() {
+		m := scanner.Text()
+		counter++
+		err := redis.UpdateRunningCommandOutputById(redisClient, completedCommandId, m)
+		if err != nil {
+			slog.Error("error while updating redis data")
+		}
+		result, _ := redis.GetRunningCommandResultById(redisClient, completedCommandId)
+		if counter%10 == 0 {
+			postgres.UpdateCommandResultById(storage, completedCommandId, result)
+		}
+		fmt.Println(filename, m)
+	}
+	com.Wait()
+
+	result, err := redis.GetRunningCommandResultById(redisClient, completedCommandId)
+	if err != nil {
+		slog.Error("error", err)
+	}
+	if !postgres.IsCommandStopped(storage, completedCommandId) {
+		postgres.UpdateCompletedCommandById(storage, completedCommandId, result)
+	}
+	redis.DeleteRunningCommandResultById(redisClient, completedCommandId)
+
 	//slog.Info(string(out))
+}
+
+func StopCommandById(storage *postgres.Storage, redisClient *redis.Redis, commandId int) (models.CompletedCommandRequest, error) {
+	if !postgres.IsCommandRunning(storage, commandId) {
+		slog.Error("error stopping command. status not running")
+		return models.CompletedCommandRequest{}, fmt.Errorf("command %d status not running", commandId)
+	}
+
+	ppid, err := postgres.GetPPIDByCompletedCommandId(storage, commandId)
+	if err != nil {
+		return models.CompletedCommandRequest{}, err
+	}
+	com := exec.Command("pkill", "-P", strconv.Itoa(ppid))
+	err = com.Start()
+	if err != nil {
+		return models.CompletedCommandRequest{}, err
+	}
+
+	result, err := redis.GetRunningCommandResultById(redisClient, commandId)
+	if err != nil {
+		slog.Error("error", err)
+	}
+	slog.Info("stopped command result:", result)
+	err = postgres.UpdateStoppedCommandById(storage, commandId, result)
+	if err != nil {
+		return models.CompletedCommandRequest{}, err
+	}
+	redis.DeleteRunningCommandResultById(redisClient, commandId)
+	completed, err := GetCompletedCommandById(storage, redisClient, commandId)
+	return completed, err
 }
 
 func CreateTempFile(commandId int, code string) (string, error) {

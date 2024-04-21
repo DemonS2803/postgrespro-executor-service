@@ -18,9 +18,10 @@ func Routes(redisClient *redis.Redis, db *postgres.Storage) *chi.Mux {
 	router.Use(auth.NewTokenHandler())
 
 	router.Get("/ping", command.Ping())
+	router.Post("/command", command.CreateCommand(db, redisClient))
 	router.Get("/command/exec/{id}", command.ExecuteCommandController(db, redisClient))
 	router.Get("/command/result/{id}", command.GetCompletedCommandByIdController(db, redisClient))
-	router.Post("/command", command.CreateCommand(db, redisClient))
+	router.Get("/command/stop/{id}", command.StopCommandController(db, redisClient))
 	router.Get("/command/{id}", command.GetCommandByIdController(db, redisClient))
 	router.Get("/commands", command.GetCommandList(db, redisClient))
 

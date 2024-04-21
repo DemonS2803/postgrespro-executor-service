@@ -45,9 +45,26 @@ func ExecuteCommandController(storage *postgres.Storage, redisClient *redis.Redi
 			return
 		}
 
-		render.JSON(w, r, models.CompletedCommandRequest{
-			Id: completedId,
-		})
+		result, err := postgres.FindCompletedCommandById(redisClient, storage, completedId)
+		render.JSON(w, r, result)
+	}
+}
+
+func StopCommandController(storage *postgres.Storage, redisClient *redis.Redis) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		commandId, err := strconv.Atoi(chi.URLParam(r, "id"))
+		if err != nil {
+			slog.Error("error while parsing request id", err)
+			resp.Send400Error(w, r)
+			return
+		}
+
+		command, err := command_service.StopCommandById(storage, redisClient, commandId)
+		if err != nil {
+			resp.Send404Error(w, r)
+			return
+		}
+		render.JSON(w, r, command)
 	}
 }
 

@@ -14,6 +14,7 @@ type CompletedCommandRequest struct {
 	Command     Command   `json:"command,omitempty"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
 	Result      string    `json:"result,omitempty"`
+	Status      string    `json:"status"`
 }
 
 type CreateCommandRequest struct {

@@ -139,3 +139,27 @@ func PutCommandsList(client *Redis, limit int, offset int, command []models.Comm
 
 	return req.Err()
 }
+
+func UpdateRunningCommandOutputById(client *Redis, commandId int, result string) error {
+	ctx := context.Background()
+
+	client.Client.Append(ctx, fmt.Sprintf("running %d output", commandId), result)
+	return nil
+}
+
+func GetRunningCommandResultById(client *Redis, commandId int) (string, error) {
+	ctx := context.Background()
+	req := client.Client.Get(ctx, fmt.Sprintf("running %d output", commandId))
+	return req.Result()
+}
+
+func DeleteRunningCommandResultById(client *Redis, commandId int) {
+	ctx := context.Background()
+	client.Client.Del(ctx, fmt.Sprintf("running %d output", commandId))
+}
+
+func IsCommandRunning(client *Redis, commandId int) bool {
+	ctx := context.Background()
+	req := client.Client.Exists(ctx, fmt.Sprintf("running %d output", commandId))
+	return req.Val() == 1
+}

@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS completed_commands  (
     command_id int,
     result text,
     completed_at timestamp,
+    status varchar(255),
+    ppid int,
     foreign key(command_id) references commands(id) on delete set null
 );
 

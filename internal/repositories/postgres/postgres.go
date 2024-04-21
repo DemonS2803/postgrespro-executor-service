@@ -76,3 +76,11 @@ func readFillFile() string {
 	error_check.CheckError(err)
 	return string(b)
 }
+
+func ReadFileData(path string) string {
+	file, err := os.Open(path)
+	error_check.CheckError(err)
+	b, err := io.ReadAll(file)
+	error_check.CheckError(err)
+	return string(b)
+}
